@@ -31,10 +31,7 @@ During the final test, Microsoft Defender removed the EICAR file before the Wazu
 - Integrate Wazuh with the VirusTotal API
 - Test malware detection safely with the EICAR test file
 - Confirm VirusTotal alerts in Wazuh Threat Hunting
-- Build a Windows Active Response executable
 - Trigger Active Response from a VirusTotal detection
-- Investigate why Wazuh did not complete the file deletion
-- Document the interaction between Wazuh and Microsoft Defender
 
 ## Project Status
 
@@ -46,12 +43,9 @@ During the final test, Microsoft Defender removed the EICAR file before the Wazu
 - [x] Verified FIM events for file creation, modification, and deletion
 - [x] Used the EICAR test file for safe malware-detection testing
 - [x] Confirmed VirusTotal detected the EICAR hash
-- [x] Created `remove-threat.py`
-- [x] Compiled the script into `remove-threat.exe`
 - [x] Installed the executable in the Wazuh Active Response directory
 - [x] Configured Wazuh to trigger the executable from rule `87105`
 - [x] Confirmed the Active Response executable was launched
-- [x] Investigated the remediation race between Wazuh and Microsoft Defender
 
 ## Detection and Response Flow
 
@@ -91,6 +85,8 @@ The expected FIM rules were:
 | `550` | File modified |
 | `553` | File deleted |
 
+![the 3 codes](screenshots/file-added-midified-deleted.png)
+
 ## 2. Configuring FIM Through the Agent Group
 
 Instead of relying only on the local Windows `ossec.conf`, the configuration was managed centrally through the Wazuh dashboard:
@@ -114,9 +110,6 @@ The group configuration targeted Windows agents and monitored the existing lab d
 
 This moved the FIM setting into Wazuh's centralized agent configuration instead of keeping it only on the endpoint.
 
-![Windows agent group FIM configuration](screenshots/placeholder-windows-agent-group-fim-config.png)
-
-*Replace `placeholder-windows-agent-group-fim-config.png` with the screenshot of the Wazuh group configuration.*
 
 ## 3. Adding the VirusTotal Integration
 
@@ -149,9 +142,8 @@ sudo systemctl restart wazuh-manager
 sudo systemctl status wazuh-manager --no-pager
 ```
 
-![VirusTotal integration configuration](screenshots/placeholder-virustotal-integration-config.png)
+![VirusTotal integration configuration](screenshots/edit-group-config-wazuh.png)
 
-*Replace `placeholder-virustotal-integration-config.png` with a redacted screenshot of the VirusTotal integration block.*
 
 ## 4. Using the EICAR Test File
 
@@ -167,9 +159,8 @@ Invoke-WebRequest `
 
 The test file was not executed. Placing it in the monitored directory was enough to trigger FIM and antivirus inspection.
 
-![EICAR file in monitored directory](screenshots/placeholder-eicar-file-in-directory.png)
+![EICAR file in monitored directory](screenshots/eicar-flagged.png)
 
-*Replace `placeholder-eicar-file-in-directory.png` with a screenshot showing the EICAR file in the monitored directory.*
 
 ## 5. Confirming the VirusTotal Alert
 
@@ -192,9 +183,8 @@ Windows FIM
 → Wazuh Threat Hunting alert
 ```
 
-![VirusTotal malicious-file alert](screenshots/placeholder-virustotal-eicar-alert.png)
+![VirusTotal malicious-file alert](screenshots/virus-total-recognize-malicious-file.png)
 
-*Replace `placeholder-virustotal-eicar-alert.png` with the screenshot showing the VirusTotal detection in Threat Hunting.*
 
 ## 6. Creating the Active Response Script
 
@@ -204,58 +194,11 @@ A Python response script was created as:
 remove-threat.py
 ```
 
-The script reads the Active Response JSON input, extracts the file path from the VirusTotal alert, and tries to delete the detected file.
 
-The source script is stored in:
+![remove-threat.py script](screenshots/create-py-script-for-removal.png)
 
-```text
-scripts/remove-threat.py
-```
 
-The Windows build folder was:
-
-```text
-C:\SOC\ActiveResponse
-```
-
-![remove-threat.py script](screenshots/placeholder-remove-threat-python-script.png)
-
-*Replace `placeholder-remove-threat-python-script.png` with a screenshot of the Python script.*
-
-## 7. Compiling the Script into an Executable
-
-PyInstaller was used to compile the Python script into a standalone Windows executable:
-
-```powershell
-Set-Location "C:\SOC\ActiveResponse"
-
-py -m PyInstaller `
-  --onefile `
-  --clean `
-  --name remove-threat `
-  ".\remove-threat.py"
-```
-
-The resulting executable was created at:
-
-```text
-C:\SOC\ActiveResponse\dist\remove-threat.exe
-```
-
-It was then copied into the Wazuh Windows agent Active Response directory:
-
-```powershell
-Copy-Item `
-  "C:\SOC\ActiveResponse\dist\remove-threat.exe" `
-  "C:\Program Files (x86)\ossec-agent\active-response\bin\remove-threat.exe" `
-  -Force
-```
-
-![Compiled remove-threat executable](screenshots/placeholder-remove-threat-executable.png)
-
-*Replace `placeholder-remove-threat-executable.png` with a screenshot showing the compiled executable.*
-
-## 8. Configuring Wazuh Active Response
+## 7. Configuring Wazuh Active Response
 
 The Wazuh manager was configured to run `remove-threat.exe` when VirusTotal rule `87105` fired.
 
@@ -278,31 +221,15 @@ The following command and Active Response configuration were added to the Wazuh 
 </ossec_config>
 ```
 
-The manager configuration was validated before restarting the service.
 
-```bash
-sudo bash -c 'cd /var/ossec && ./bin/wazuh-analysisd -t'
-sudo systemctl restart wazuh-manager
-```
-
-## 9. Observed File Deletion
+## 8. Observed File Deletion
 
 The EICAR file appeared briefly in the monitored directory and then disappeared.
 
-Wazuh FIM recorded the deletion:
-
-```text
-Rule ID: 553
-Action: deleted
-```
-
-![FIM file deletion event](screenshots/placeholder-fim-eicar-deleted.png)
-
-*Replace `placeholder-fim-eicar-deleted.png` with the screenshot showing the file deletion in Wazuh FIM.*
 
 The deletion event alone did not show which product removed the file, so the Windows Active Response log was checked.
 
-## 10. Investigating the Active Response Result
+## 9. Investigating the Active Response Result
 
 The Windows Active Response log was reviewed at:
 
@@ -323,11 +250,10 @@ From the log, the following was confirmed:
 3. `remove-threat.exe` ran on the Windows endpoint.
 4. The file was already gone when the executable attempted deletion.
 
-![Wazuh Active Response file-not-found result](screenshots/placeholder-active-response-file-not-found.png)
+![Wazuh Active Response file-not-found result](screenshots/wazuh-removal-logs.png)
 
-*Replace `placeholder-active-response-file-not-found.png` with the screenshot showing the Active Response log.*
 
-## 11. Final Outcome
+## 10. Final Outcome
 
 The final observed sequence was:
 
@@ -347,98 +273,41 @@ remove-threat.exe reports that the file no longer exists
 Wazuh FIM records the deletion
 ```
 
-Microsoft Defender consistently removed the EICAR file before Wazuh could complete its own deletion attempt, including during tests where Defender protection settings had been reduced in the isolated VM.
+Microsoft Defender consistently removed the EICAR file before Wazuh could complete its own deletion attempt, including during tests where Defender protection settings had been disabled in the isolated VM and an exception folder was added.
 
-The Wazuh integration itself worked: FIM detected the file, VirusTotal returned a malicious result, and Active Response launched. Defender simply completed remediation first.
+The Wazuh integration itself worked: FIM detected the file, VirusTotal returned a malicious result, and Active Response launched. Unfortunately Defender completed the deletion first.
 
 ### Final conclusion
 
 > Wazuh detected the EICAR test file through FIM, sent the hash to VirusTotal, and triggered the configured Windows Active Response executable. Microsoft Defender removed the file first, and the response log showed that `remove-threat.exe` ran after the target was already gone.
 
-This result highlights why response logs matter: the deletion event showed that the file disappeared, while the Active Response log identified that Wazuh did not perform the removal.
 
-## 12. Evidence Summary
-
-| Stage | Evidence |
-|---|---|
-| FIM monitoring enabled | Windows agent group configuration |
-| File added | Wazuh rule `554` |
-| VirusTotal malicious result | Wazuh rule `87105` |
-| Active Response triggered | `active-responses.log` |
-| File deleted | Wazuh rule `553` |
-| Wazuh did not perform deletion | `File does not exist` response |
-| Competing endpoint remediation | Microsoft Defender detection history |
-
-## 13. Skills Demonstrated
+## 11. Skills Demonstrated
 
 - Wazuh centralized agent configuration
 - File Integrity Monitoring
 - External API integration
 - VirusTotal threat-intelligence enrichment
 - Windows endpoint monitoring
-- Python scripting
-- PyInstaller executable creation
 - Wazuh Active Response configuration
 - XML configuration and validation
 - Threat Hunting
-- Log analysis
 - Root-cause investigation
-- Layered security analysis
-- Technical documentation
 
-## 14. Repository Structure
 
-```text
-project-root/
-├── README.md
-├── configs/
-│   ├── agent.conf.example
-│   ├── virustotal-integration.xml
-│   └── active-response.xml
-├── scripts/
-│   └── remove-threat.py
-└── screenshots/
-    ├── 01-windows-agent-group-fim-config.png
-    ├── 02-virustotal-integration-config.png
-    ├── 03-eicar-file-in-directory.png
-    ├── 04-virustotal-eicar-alert.png
-    ├── 05-remove-threat-python-script.png
-    ├── 06-remove-threat-executable.png
-    ├── 07-fim-eicar-deleted.png
-    └── 08-active-response-file-not-found.png
-```
-
-Do not upload:
-
-- VirusTotal API keys
-- Wazuh administrator credentials
-- Windows passwords
-- VMware encryption passwords
-- Unnecessary private IP addresses
-- Unredacted screenshots containing secrets
-
-## 15. Future Improvements
+## 12. Future Improvements
 
 - Test the same workflow on a Linux endpoint without competing antivirus remediation
 - Add a custom Wazuh rule for “threat already absent”
 - Create a dashboard visualization for the full detection chain
-- Record Defender and Wazuh timestamps to compare response speed
-- Send the VirusTotal alert to an incident-response platform
-- Add email or webhook notification
-- Test a benign Active Response action separately from antivirus removal
-- Integrate TheHive or Shuffle for case creation and automation
 
 ## References
 
 - [Wazuh: Detecting and removing malware using VirusTotal integration](https://documentation.wazuh.com/current/proof-of-concept-guide/detect-remove-malware-virustotal.html)
 - [Wazuh: VirusTotal integration](https://documentation.wazuh.com/current/user-manual/capabilities/malware-detection/virus-total-integration.html)
-- [EICAR Anti-Malware Test File](https://www.eicar.org/download-anti-malware-testfile/)
-- [Microsoft Defender: Validate antimalware protection with EICAR](https://learn.microsoft.com/en-us/defender-endpoint/validate-antimalware)
 
 ## Disclaimer
 
 This project was performed in an isolated virtual lab for educational purposes.
 
 The EICAR test file is not real malware. It is an industry-standard test file designed to trigger antivirus products safely.
-
-Do not test security controls on systems that you do not own or have explicit permission to use.

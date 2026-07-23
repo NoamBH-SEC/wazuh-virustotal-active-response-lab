@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-This project extends the Wazuh home SOC lab from Part 1 by adding external threat-intelligence enrichment and endpoint response.
+This project builds on Part 1 of the home SOC lab by adding VirusTotal enrichment and Wazuh Active Response.
 
-The goal was to monitor a Windows directory with Wazuh File Integrity Monitoring (FIM), submit newly detected file hashes to VirusTotal, and trigger a Windows Active Response executable when VirusTotal identified a file as malicious.
+The aim was to monitor a Windows directory with Wazuh File Integrity Monitoring (FIM), send detected file hashes to VirusTotal, and run a Windows response executable when VirusTotal reported a malicious file.
 
-The lab successfully demonstrated the following workflow:
+The workflow tested in this part was:
 
 ```text
 File created on Windows
@@ -22,21 +22,7 @@ Wazuh triggers remove-threat.exe
 The response checks whether the file still exists
 ```
 
-The final test also demonstrated a realistic layered-defense condition: Microsoft Defender removed the EICAR test file before the Wazuh Active Response executable could delete it. Wazuh still detected the file, received the VirusTotal result, and triggered the response correctly.
-
-## Repository Name
-
-Recommended repository name:
-
-```text
-wazuh-virustotal-active-response-lab
-```
-
-Alternative:
-
-```text
-home-soc-part-2-active-response
-```
+During the final test, Microsoft Defender removed the EICAR file before the Wazuh response could delete it. Wazuh still detected the file, received the VirusTotal result, and launched the configured response.
 
 ## Objectives
 
@@ -66,17 +52,6 @@ home-soc-part-2-active-response
 - [x] Configured Wazuh to trigger the executable from rule `87105`
 - [x] Confirmed the Active Response executable was launched
 - [x] Investigated the remediation race between Wazuh and Microsoft Defender
-
-## Lab Environment
-
-| Component | Purpose |
-|---|---|
-| Ubuntu Server | Wazuh manager, indexer, dashboard, and VirusTotal integration |
-| Windows 11 | Monitored endpoint |
-| Wazuh Windows agent | Sends endpoint and FIM events to the manager |
-| VirusTotal API | Enriches FIM events using file hashes |
-| Microsoft Defender | Endpoint antivirus and competing remediation control |
-| VMware Workstation | Hosts the isolated lab environment |
 
 ## Detection and Response Flow
 
@@ -137,7 +112,7 @@ The group configuration targeted Windows agents and monitored the existing lab d
 </agent_config>
 ```
 
-Using the group configuration made it possible to manage endpoint settings from the Wazuh server.
+This moved the FIM setting into Wazuh's centralized agent configuration instead of keeping it only on the endpoint.
 
 ![Windows agent group FIM configuration](screenshots/placeholder-windows-agent-group-fim-config.png)
 
@@ -164,7 +139,7 @@ The integration block followed the Wazuh VirusTotal configuration format:
 </ossec_config>
 ```
 
-The API key must never be committed to GitHub. Repository examples should always use a placeholder such as `REDACTED` or `YOUR_VIRUSTOTAL_API_KEY`.
+The real API key is not included in the repository. Configuration examples use a placeholder such as `REDACTED`.
 
 After editing the configuration, it was validated and the Wazuh manager was restarted.
 
@@ -180,11 +155,9 @@ sudo systemctl status wazuh-manager --no-pager
 
 ## 4. Using the EICAR Test File
 
-The EICAR Anti-Malware Test File is a harmless industry-standard test file developed for testing antivirus and endpoint security products.
+EICAR is a harmless, industry-standard test file used to check antivirus and endpoint detection workflows. It contains no real malicious code, but security products are designed to detect it as a test threat.
 
-It does not contain real malicious code. Security products intentionally recognize its standard content as though it were malware, allowing detection and response workflows to be tested without introducing an actual threat.
-
-The documented Windows retrieval method was:
+The file was retrieved from the official EICAR site with PowerShell:
 
 ```powershell
 Invoke-WebRequest `
@@ -192,11 +165,7 @@ Invoke-WebRequest `
   -OutFile "C:\SOC\integrity-check\eicar.txt"
 ```
 
-### Lab note
-
-The Windows VM experienced an HTTPS certificate trust issue when using `Invoke-WebRequest`. The final test therefore used the official EICAR test content placed locally in the monitored directory. This produced the same standard EICAR file used for antivirus validation.
-
-The test file was never executed. Creating it in the monitored directory was enough to trigger FIM and antivirus inspection.
+The test file was not executed. Placing it in the monitored directory was enough to trigger FIM and antivirus inspection.
 
 ![EICAR file in monitored directory](screenshots/placeholder-eicar-file-in-directory.png)
 
@@ -214,7 +183,7 @@ The most important event in this stage was:
 Rule ID: 87105
 ```
 
-This confirmed that the following chain was working:
+This confirmed the following path was working:
 
 ```text
 Windows FIM
@@ -229,21 +198,21 @@ Windows FIM
 
 ## 6. Creating the Active Response Script
 
-The Wazuh proof-of-concept workflow uses a Python script named:
+A Python response script was created as:
 
 ```text
 remove-threat.py
 ```
 
-The script reads the Active Response JSON message, extracts the file path from the VirusTotal alert, and attempts to delete the detected file.
+The script reads the Active Response JSON input, extracts the file path from the VirusTotal alert, and tries to delete the detected file.
 
-For a cleaner repository, store the script in:
+The source script is stored in:
 
 ```text
 scripts/remove-threat.py
 ```
 
-The Windows build folder used in the lab was:
+The Windows build folder was:
 
 ```text
 C:\SOC\ActiveResponse
@@ -288,7 +257,7 @@ Copy-Item `
 
 ## 8. Configuring Wazuh Active Response
 
-The Ubuntu Wazuh manager was configured to call `remove-threat.exe` when VirusTotal rule `87105` fired.
+The Wazuh manager was configured to run `remove-threat.exe` when VirusTotal rule `87105` fired.
 
 The following command and Active Response configuration were added to the Wazuh manager:
 
@@ -331,7 +300,7 @@ Action: deleted
 
 *Replace `placeholder-fim-eicar-deleted.png` with the screenshot showing the file deletion in Wazuh FIM.*
 
-At first, the deletion suggested that the Wazuh Active Response had removed the file. Further investigation showed that this was not the case.
+The deletion event alone did not show which product removed the file, so the Windows Active Response log was checked.
 
 ## 10. Investigating the Active Response Result
 
@@ -341,18 +310,18 @@ The Windows Active Response log was reviewed at:
 C:\Program Files (x86)\ossec-agent\active-response\active-responses.log
 ```
 
-The log showed that Wazuh successfully launched `remove-threat.exe`, but the executable reported:
+The log confirmed that Wazuh launched `remove-threat.exe`, but the executable reported:
 
 ```text
 Error removing threat: File does not exist
 ```
 
-This proved that:
+From the log, the following was confirmed:
 
 1. Wazuh received the VirusTotal alert.
 2. Rule `87105` triggered the configured response.
-3. `remove-threat.exe` executed on the Windows endpoint.
-4. The file was already absent when the executable attempted deletion.
+3. `remove-threat.exe` ran on the Windows endpoint.
+4. The file was already gone when the executable attempted deletion.
 
 ![Wazuh Active Response file-not-found result](screenshots/placeholder-active-response-file-not-found.png)
 
@@ -378,15 +347,15 @@ remove-threat.exe reports that the file no longer exists
 Wazuh FIM records the deletion
 ```
 
-Microsoft Defender continued to remediate the EICAR file before Wazuh could delete it, even after real-time and related protection settings were disabled during the isolated test.
+Microsoft Defender consistently removed the EICAR file before Wazuh could complete its own deletion attempt, including during tests where Defender protection settings had been reduced in the isolated VM.
 
-The result should not be described as a failed Wazuh integration. The detection and trigger stages worked correctly. The limitation was that another endpoint security control completed remediation first.
+The Wazuh integration itself worked: FIM detected the file, VirusTotal returned a malicious result, and Active Response launched. Defender simply completed remediation first.
 
 ### Final conclusion
 
-> Wazuh successfully detected the EICAR test file through File Integrity Monitoring, enriched the event through VirusTotal, and triggered the configured Windows Active Response executable. Microsoft Defender removed the file before the Wazuh response could complete the deletion. The Active Response log confirmed that `remove-threat.exe` executed but found that the target file was already absent.
+> Wazuh detected the EICAR test file through FIM, sent the hash to VirusTotal, and triggered the configured Windows Active Response executable. Microsoft Defender removed the file first, and the response log showed that `remove-threat.exe` ran after the target was already gone.
 
-This is a useful SOC finding because it demonstrates overlapping security controls and the importance of verifying which product performed remediation.
+This result highlights why response logs matter: the deletion event showed that the file disappeared, while the Active Response log identified that Wazuh did not perform the removal.
 
 ## 12. Evidence Summary
 
@@ -417,10 +386,10 @@ This is a useful SOC finding because it demonstrates overlapping security contro
 - Layered security analysis
 - Technical documentation
 
-## 14. Recommended Repository Structure
+## 14. Repository Structure
 
 ```text
-wazuh-virustotal-active-response-lab/
+project-root/
 ├── README.md
 ├── configs/
 │   ├── agent.conf.example
@@ -445,7 +414,7 @@ Do not upload:
 - Wazuh administrator credentials
 - Windows passwords
 - VMware encryption passwords
-- Private IP information that you do not want publicly associated with the lab
+- Unnecessary private IP addresses
 - Unredacted screenshots containing secrets
 
 ## 15. Future Improvements
